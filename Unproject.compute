@@ -26,7 +26,7 @@ CBUFFER_START(UnprojectionArgs)
 CBUFFER_END
 
 Texture2D<float> depthTexture; //sampled as red channel, in [0, 1] where 1 corresponds to max distance
-Texture2D<float4> colorTexture; //color corresponding to depth sample
+Texture2D<float> colorTexture; //color corresponding to depth sample (luminance only for now)
 
 struct VertexData
 {
@@ -46,8 +46,8 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
 
     float3 unprojection = {id.x - PPX, PPY - id.y, 1};
     float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
-    float4 c = colorTexture[id.xy];
+    float c = colorTexture[id.xy]; // just grayscale luminance for the moment
 
-    VertexData v = {p, c};
+    VertexData v = {p, float4(c, c, c, 1)};
     vertices.Append(v);
 }
