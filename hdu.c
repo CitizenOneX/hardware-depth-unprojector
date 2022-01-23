@@ -70,6 +70,9 @@ void hdu_unproject(const struct hdu *h, const struct hdu_depth *depth, struct hd
 		{
 			d = depth->data[r * depth->depth_stride / 2 + c] * h->depth_unit;
 
+			// FIXME consider dropping the out of range points here
+			// but then we can't use quad meshing the same way, but
+			// points with sizes might be fine anyway
 			//if (d <= h->min_depth || d > h->max_depth)
 			//	continue;
 
