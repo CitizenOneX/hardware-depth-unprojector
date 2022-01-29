@@ -36,21 +36,24 @@ struct VertexData
     float4 color;
 };
 
-AppendStructuredBuffer<VertexData> vertices;
+RWStructuredBuffer<VertexData> vertices;
+AppendStructuredBuffer<uint3> indices;
 
 [numthreads(8,8,1)]
 void UnprojectKernel (uint3 id : SV_DispatchThreadID)
 {
-    float d = depthTexture.Load(id.xyz);
+    float d = depthTexture.Load(id.xyz); // TODO should this be id.xy? or just array access [id.xy]?
     
-    if(d < MinDistance || d > MaxDistance)
-        return;
+    // TODO can't exclude any Vertices at this stage or else I muck up the indices
+    //if(d < MinDistance || d > MaxDistance)
+    //    return;
 
     float3 unprojection = {id.x - PPX, PPY - id.y, 1};
     float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
     
+    // convert the color from YUV to RGB
     float y = colorTextureY[id.xy];
-    float u = colorTextureU[uint2(id.x / 2, id.y / 2)];
+    float u = colorTextureU[uint2(id.x / 2, id.y / 2)]; // TODO can this be id.xy/2?
     float v = colorTextureV[uint2(id.x / 2, id.y / 2)];
 
     u = u - 0.5;
@@ -59,6 +62,33 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     float g = (1.164f * y - 0.813f * v - 0.391f * u);
     float b = (1.164f * y + 2.018f * u);
 
+    // place this vertex in the VertexBuffer
     VertexData vertex = {p, float4(r, g, b, 1)};
-    vertices.Append(vertex);
+    vertices[id.y * 320 + id.x] = vertex;
+
+    // for every row/col except the last, put indices for two triangles
+    // into the Index Buffer below and to the right of the current vertex.
+    // TODO later: also check for depth difference between pixels and
+    // exclude triangles which exceed a threshold in depth difference
+    // But all vertex depths need to be calculated first? Can I chain the
+    // stages one after another? Well I could also just sample the depth texture
+    // 4 times even when I'm only processing top-left vertex
+    // FIXME try to get width and height from groups x threads or something?
+    // FIXME or else pass them to the shader in a buffer
+    // FIXME might be that 0, 0 is bottom-left, not top-left of depth (all? textures)
+    if ((id.x > 0) && (id.y > 0))
+    {
+        // add the top-left triangle if none of the depths are 0
+        uint bottomleft = id.y * 320 + id.x;
+        if (depthTexture[id.xy] > 0.1 && depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        {
+            indices.Append(uint3(bottomleft, bottomleft + 320, bottomleft + 1));           // bottom-left, top-left, bottom-right
+        }
+
+        // add the lower-right triangle if none of the depths are 0
+        if (depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        {
+            indices.Append(uint3(bottomleft + 320, bottomleft + 320 + 1, bottomleft + 1));          // top-left, top-right, bottom-right
+        }
+    }
 }
