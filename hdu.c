@@ -76,7 +76,7 @@ void hdu_unproject(const struct hdu *h, const struct hdu_depth *depth, struct hd
 	// Y-plane length depth->color_stride * depth->height
 	const uint8_t* colorY = depth->colors;
 	// UV interleaved plane, length depth->color_stride * (depth->height / 2) in bytes (half of that in short ints)
-	const uint16_t* colorUV = ((uint8_t*)depth->colors) + depth->color_stride * depth->height;
+	const uint16_t* colorUV = (int16_t*)(((uint8_t*)depth->colors) + depth->color_stride * depth->height);
 	uint8_t Y, R, G, B = 0;
 	uint16_t UV = 0;
 
