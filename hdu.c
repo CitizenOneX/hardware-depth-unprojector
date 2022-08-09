@@ -82,8 +82,10 @@ void hdu_unproject(const struct hdu *h, const struct hdu_depth *depth, struct hd
 
 			if (depth->colors)
 			{
-				const uint8_t* color_line = (((uint8_t*)depth->colors) + r * depth->color_stride);
-				pc->colors[points] = color_line[c];
+				// TODO combine Y and UV values from NV12 here
+				//const uint8_t* color_line = (((uint8_t*)depth->colors) + r * depth->color_stride);
+				//pc->colors[points] = color_line[c];
+				pc->colors[points] = default_color;
 			}
 			else
 			{
