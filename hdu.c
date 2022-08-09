@@ -70,22 +70,19 @@ void hdu_unproject(const struct hdu *h, const struct hdu_depth *depth, struct hd
 		{
 			d = depth->data[r * depth->depth_stride / 2 + c] * h->depth_unit;
 
-			// FIXME consider dropping the out of range points here
-			// but then we can't use quad meshing the same way, but
-			// points with sizes might be fine anyway
-			//if (d <= h->min_depth || d > h->max_depth)
-			//	continue;
-
 			pc->data[points][0] = d * (c - h->ppx) / h->fx;
 			pc->data[points][1] = -d * (r - h->ppy) / h->fy;
 			pc->data[points][2] = d;
 
 			if (depth->colors)
 			{
-				// TODO combine Y and UV values from NV12 here
+				// TODO combine Y and UV values from NV12 here to RGBA color32 struct
 				//const uint8_t* color_line = (((uint8_t*)depth->colors) + r * depth->color_stride);
+				//pc->colors[points] = depth->colors[r/2 * depth->color_stride + (r % 2) * depth->width  + c + 1 - c % 2];
 				//pc->colors[points] = color_line[c];
-				pc->colors[points] = default_color;
+				//pc->colors[points] = default_color;
+				// TODO copy Y value for now as a single uint8 per vertex
+				pc->colors[points] = depth->colors[r * depth->color_stride + c];
 			}
 			else
 			{
