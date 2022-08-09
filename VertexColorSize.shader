@@ -53,7 +53,7 @@ Shader "Custom/VertexColorSize"
                 vout.position = UnityObjectToClipPos(vout.position);
 
                 vout.color = vin.color;
-                //vout.size = 5.0f/length(ObjSpaceViewDir(vin.position));
+                //vout.size = 5.0f/length(ObjSpaceViewDir(vin.position)); // only supported in OpenGL, not directx?
                 vout.size = 5.0f; // leave distance scaling out of it for the moment
 
                 return vout;
