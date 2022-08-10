@@ -26,8 +26,8 @@ CBUFFER_START(UnprojectionArgs)
 CBUFFER_END
 
 Texture2D<float> depthTexture; //sampled as red channel, in [0, 1] where 1 corresponds to max distance
-//Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
-//Texture2D<float> colorTextureUV; //UV plane of color corresponding to depth sample (width, height/2) floats
+Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
+Texture2D<float2> colorTextureUV; //UV plane of color corresponding to depth sample (width/2, height/2) floats
 
 struct VertexData
 {
@@ -42,8 +42,8 @@ AppendStructuredBuffer<VertexData> vertices;
 [numthreads(8,8,1)]
 void UnprojectKernel (uint3 id : SV_DispatchThreadID)
 {
-    float d = depthTexture.Load(id.xyz); // TODO should this be id.xy? or just array access [id.xy]?
-    
+    float d = depthTexture[id.xy];
+
     // TODO can't exclude any Vertices at this stage or else I muck up the indices
     //if(d < MinDistance || d > MaxDistance)
     //    return;
@@ -52,24 +52,22 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
     
     // convert the color from YUV to RGB
-    /*
     float y = colorTextureY[id.xy];
-    float uv = colorTextureUV[uint2(id.x / 2, id.y / 2)]; // TODO can this be id.xy/2?
-    float u = uv.x;
-    float v = uv.y;
-    u = u - 0.5;
-    v = v - 0.5;
-    float r = (1.164f * y + 1.596f * v);
-    float g = (1.164f * y - 0.813f * v - 0.391f * u);
-    float b = (1.164f * y + 2.018f * u);
-    */
+    float2 uv = colorTextureUV[id.xy / 2] - 0.5;
+    float r = y + 1.370705 * (uv.y);
+    float g = y - 0.698001 * (uv.y) - (0.337633 * (uv.x));
+    float b = y + 1.732446 * (uv.x);
+
+    // TODO can't exclude any Vertices at this stage or else I muck up the indices
+    // but maybe I can make vertices invisible if out of range?
+    //float alpha = (d < MinDistance || d > MaxDistance) ? 0 : 1;
 
     // place this vertex in the VertexBuffer
-    //VertexData vertex = {p, float4(r, g, b, 1)};
-    VertexData vertex = { p, float4(1, 1, 1, 1) };
-    //vertices[id.y * 320 + id.x] = vertex;
+    VertexData vertex = { p, float4(r, g, b, 1) };
     vertices.Append(vertex);
+    //vertices[id.y * 320 + id.x] = vertex;
 
+    // TODO - try making a triangular mesh out of the vertices
     // for every row/col except the last, put indices for two triangles
     // into the Index Buffer below and to the right of the current vertex.
     // TODO later: also check for depth difference between pixels and
