@@ -24,6 +24,8 @@ Shader "Custom/VertexColorSize"
 
             #pragma vertex vert
             #pragma fragment frag
+            // include debug symbols for RenderDoc
+            #pragma enable_d3d11_debug_symbols
 
             #include "UnityCG.cginc"
  

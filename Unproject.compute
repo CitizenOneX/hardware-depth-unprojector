@@ -26,9 +26,8 @@ CBUFFER_START(UnprojectionArgs)
 CBUFFER_END
 
 Texture2D<float> depthTexture; //sampled as red channel, in [0, 1] where 1 corresponds to max distance
-Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
-Texture2D<float> colorTextureU; //U plane of color corresponding to depth sample (width/2, height/2)
-Texture2D<float> colorTextureV; //V plane of color corresponding to depth sample (width/2, height/2)
+//Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
+//Texture2D<float> colorTextureUV; //UV plane of color corresponding to depth sample (width, height/2) floats
 
 struct VertexData
 {
@@ -36,8 +35,9 @@ struct VertexData
     float4 color;
 };
 
-RWStructuredBuffer<VertexData> vertices;
-AppendStructuredBuffer<uint3> indices;
+//RWStructuredBuffer<VertexData> vertices;
+AppendStructuredBuffer<VertexData> vertices;
+//AppendStructuredBuffer<uint> indices;
 
 [numthreads(8,8,1)]
 void UnprojectKernel (uint3 id : SV_DispatchThreadID)
@@ -52,19 +52,23 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
     
     // convert the color from YUV to RGB
+    /*
     float y = colorTextureY[id.xy];
-    float u = colorTextureU[uint2(id.x / 2, id.y / 2)]; // TODO can this be id.xy/2?
-    float v = colorTextureV[uint2(id.x / 2, id.y / 2)];
-
+    float uv = colorTextureUV[uint2(id.x / 2, id.y / 2)]; // TODO can this be id.xy/2?
+    float u = uv.x;
+    float v = uv.y;
     u = u - 0.5;
     v = v - 0.5;
     float r = (1.164f * y + 1.596f * v);
     float g = (1.164f * y - 0.813f * v - 0.391f * u);
     float b = (1.164f * y + 2.018f * u);
+    */
 
     // place this vertex in the VertexBuffer
-    VertexData vertex = {p, float4(r, g, b, 1)};
-    vertices[id.y * 320 + id.x] = vertex;
+    //VertexData vertex = {p, float4(r, g, b, 1)};
+    VertexData vertex = { p, float4(1, 1, 1, 1) };
+    //vertices[id.y * 320 + id.x] = vertex;
+    vertices.Append(vertex);
 
     // for every row/col except the last, put indices for two triangles
     // into the Index Buffer below and to the right of the current vertex.
@@ -76,19 +80,29 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     // FIXME try to get width and height from groups x threads or something?
     // FIXME or else pass them to the shader in a buffer
     // FIXME might be that 0, 0 is bottom-left, not top-left of depth (all? textures)
-    if ((id.x > 0) && (id.y > 0))
-    {
+    //if ((id.x < 319) && (id.y < 239))
+    //{
         // add the top-left triangle if none of the depths are 0
-        uint bottomleft = id.y * 320 + id.x;
-        if (depthTexture[id.xy] > 0.1 && depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
-        {
-            indices.Append(uint3(bottomleft, bottomleft + 320, bottomleft + 1));           // bottom-left, top-left, bottom-right
-        }
+        //uint bottomleft = id.y * 320 + id.x;
+        //if (depthTexture[id.xy] > 0.1 && depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        //{
+            //indices.Append(uint3(bottomleft, bottomleft + 320, bottomleft + 1));           // bottom-left, top-left, bottom-right
+            //indices.IncrementCounter();
+            //indices.IncrementCounter();
+         //   indices.Append(bottomleft);
+         //   indices.Append(bottomleft + 1);
+         //   indices.Append(bottomleft + 320);
+        //}
 
         // add the lower-right triangle if none of the depths are 0
-        if (depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
-        {
-            indices.Append(uint3(bottomleft + 320, bottomleft + 320 + 1, bottomleft + 1));          // top-left, top-right, bottom-right
-        }
-    }
+        //if (depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        //{
+            //indices.Append(uint3(bottomleft + 320, bottomleft + 320 + 1, bottomleft + 1));          // top-left, top-right, bottom-right
+            //indices.IncrementCounter();
+            //indices.IncrementCounter();
+        //    indices.Append(bottomleft + 320);
+        //   indices.Append(bottomleft + 1);
+        //    indices.Append(bottomleft + 320 + 1);
+        //}
+    //}
 }
