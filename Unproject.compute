@@ -45,7 +45,7 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     float d = depthTexture[id.xy];
 
     if (d > 0.01f)
-        d = (d * 2048 + 2048) / 65536.0f; // d * 2048 here is (d * 65536 / 32), i.e. normalized float back out to absolute distance, then bit shifted right by 5
+        d = (d * 4096 + 2048) / 65536.0f; // d * 4096 here is (d * 65536 / 16), i.e. normalized float back out to absolute distance, then bit shifted right by 4
                                           // then add the translation offset back, then re-normalise back to [0-1]
 
     // TODO can't exclude any Vertices at this stage or else I muck up the indices
