@@ -45,8 +45,8 @@ void UnprojectKernel (uint3 id : SV_DispatchThreadID)
     float d = depthTexture[id.xy];
 
     if (d > 0.01f)
-        d = (d * 4096 + 2048) / 65536.0f; // d * 4096 here is (d * 65536 / 16), i.e. normalized float back out to absolute distance, then bit shifted right by 4
-                                          // then add the translation offset back, then re-normalise back to [0-1]
+        // shift the 10 bits of data 6 to the right, and add the 51.2cm offset back. Now we have a depth value between 512 and 1024+512 (mm)
+        d = d / 64.0f + (512.0f / 65536.0f);
     else
         d = 0.0f; // remove ghost projections from camera from little rounding errors
 
