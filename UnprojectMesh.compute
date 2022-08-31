@@ -1,0 +1,112 @@
+﻿/*
+ * Hardware Depth Unprojector (compute shader)
+ * 
+ * Copyright 2020 (C) Bartosz Meglicki <meglickib@gmail.com>
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * Compute shader for unprojecting depth map and color map to dense point cloud.
+ * The result is stored in AppendStructureBuffer.
+ *
+ * This is Unity flavour HLSL. You may recompile it with Unity for OpenGL, Vulkan etc.
+ */
+
+#pragma kernel UnprojectMeshKernel
+
+#include "UnityCG.cginc"
+
+CBUFFER_START(UnprojectionArgs)
+    float3 UnprojectionMultiplier; //max distance * [1/fx, 1/fy, 1]
+    float PPX; //principal point x pixel coordinates (center of projection)
+    float PPY; //principal point y pixel coordinates (center of projection)
+    float MinDistance; //in [0, 1], min valid distance divided by max distance, 0 accepts any
+    float MaxDistance; //in [0, 1], max valid distance divided by max distance, 1 accepts any
+CBUFFER_END
+
+Texture2D<float> depthTexture; //normalised float in [0, 1] where 1 corresponds to max distance (2^16 * distance_unit e.g. 0.00025m = 16.384m)
+Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
+Texture2D<float2> colorTextureUV; //UV plane of color corresponding to depth sample (width/2, height/2) floats
+
+struct VertexData
+{
+    float4 position;
+    float4 color;
+};
+
+//RWStructuredBuffer<VertexData> vertices;
+AppendStructuredBuffer<VertexData> vertices;
+//AppendStructuredBuffer<uint> indices;
+
+[numthreads(8,8,1)]
+void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
+{
+    float d = depthTexture[id.xy];
+
+    if (d > 0.01f)
+        // shift the 10 bits of data 6 to the right, and add the 51.2cm offset back. Now we have a depth value between 512 and 1024+512 (mm)
+        d = d / 64.0f + (512.0f / 65536.0f);
+    else
+        d = 0.0f; // remove ghost projections from camera from little rounding errors
+
+    // TODO can't exclude any Vertices at this stage or else I muck up the indices
+    //if(d < MinDistance || d > MaxDistance)
+    //    return;
+
+    float3 unprojection = {id.x - PPX, PPY - id.y, 1};
+    float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
+    
+    // convert the color from YUV to RGB
+    float y = colorTextureY[id.xy];
+    float2 uv = colorTextureUV[id.xy / 2] - 0.5;
+    float r = y + 1.370705 * (uv.y);
+    float g = y - 0.698001 * (uv.y) - (0.337633 * (uv.x));
+    float b = y + 1.732446 * (uv.x);
+
+    // TODO can't exclude any Vertices at this stage or else I muck up the indices
+    // but maybe I can make vertices invisible if out of range?
+    //float alpha = (d < MinDistance || d > MaxDistance) ? 0 : 1;
+
+    // place this vertex in the VertexBuffer
+    VertexData vertex = { p, float4(r, g, b, 1) };
+    vertices.Append(vertex);
+    //vertices[id.y * 320 + id.x] = vertex;
+
+    // TODO - try making a triangular mesh out of the vertices
+    // for every row/col except the last, put indices for two triangles
+    // into the Index Buffer below and to the right of the current vertex.
+    // TODO later: also check for depth difference between pixels and
+    // exclude triangles which exceed a threshold in depth difference
+    // But all vertex depths need to be calculated first? Can I chain the
+    // stages one after another? Well I could also just sample the depth texture
+    // 4 times even when I'm only processing top-left vertex
+    // FIXME try to get width and height from groups x threads or something?
+    // FIXME or else pass them to the shader in a buffer
+    // FIXME might be that 0, 0 is bottom-left, not top-left of depth (all? textures)
+    //if ((id.x < 319) && (id.y < 239))
+    //{
+        // add the top-left triangle if none of the depths are 0
+        //uint bottomleft = id.y * 320 + id.x;
+        //if (depthTexture[id.xy] > 0.1 && depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        //{
+            //indices.Append(uint3(bottomleft, bottomleft + 320, bottomleft + 1));           // bottom-left, top-left, bottom-right
+            //indices.IncrementCounter();
+            //indices.IncrementCounter();
+         //   indices.Append(bottomleft);
+         //   indices.Append(bottomleft + 1);
+         //   indices.Append(bottomleft + 320);
+        //}
+
+        // add the lower-right triangle if none of the depths are 0
+        //if (depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
+        //{
+            //indices.Append(uint3(bottomleft + 320, bottomleft + 320 + 1, bottomleft + 1));          // top-left, top-right, bottom-right
+            //indices.IncrementCounter();
+            //indices.IncrementCounter();
+        //    indices.Append(bottomleft + 320);
+        //   indices.Append(bottomleft + 1);
+        //    indices.Append(bottomleft + 320 + 1);
+        //}
+    //}
+}
