@@ -35,78 +35,112 @@ struct VertexData
     float4 color;
 };
 
-//RWStructuredBuffer<VertexData> vertices;
-AppendStructuredBuffer<VertexData> vertices;
-//AppendStructuredBuffer<uint> indices;
+struct TriangleData
+{
+    VertexData v1;
+    VertexData v2;
+    VertexData v3;
+};
+
+AppendStructuredBuffer<TriangleData> vertices;
 
 [numthreads(8,8,1)]
 void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
 {
-    float d = depthTexture[id.xy];
+    // do nothing for last row/last column
+    // TODO pass through the width/height in the constant buffer rather than hardcode here?
+    if (id.x==639 || id.y==479)
+    {
+        return;
+    }
 
-    if (d > 0.01f)
-        // shift the 10 bits of data 6 to the right, and add the 51.2cm offset back. Now we have a depth value between 512 and 1024+512 (mm)
-        d = d / 64.0f + (512.0f / 65536.0f);
-    else
-        d = 0.0f; // remove ghost projections from camera from little rounding errors
+    // depth
+    float d1 = depthTexture[id.xy];
+    float d2 = depthTexture[int2(id.x + 1, id.y)];
+    float d3 = depthTexture[int2(id.x+1, id.y+1)];
+    float d4 = depthTexture[int2(id.x, id.y+1)];
 
-    // TODO can't exclude any Vertices at this stage or else I muck up the indices
-    //if(d < MinDistance || d > MaxDistance)
-    //    return;
+    // scale depth and add offset from camera
+    (d1 > 0.01f) ? d1 = d1 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d2 > 0.01f) ? d2 = d2 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d3 > 0.01f) ? d3 = d3 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d4 > 0.01f) ? d4 = d4 / 64.0f + (512.0f / 65536.0f) : 0.0f;
 
-    float3 unprojection = {id.x - PPX, PPY - id.y, 1};
-    float4 p = float4(d * unprojection * UnprojectionMultiplier, 1);
-    
+    if (d1 < 0.01f || d3 < 0.01f)
+    {
+        // neither triangle should be drawn
+        return;
+    }
+
+    // unprojection matrix
+    float3 up1 = { id.x - PPX, PPY - id.y, 1 };
+    float3 up3 = { id.x + 1 - PPX, PPY - (id.y + 1), 1 };
+    // position
+    float4 p1 = float4(d1 * up1 * UnprojectionMultiplier, 1);
+    float4 p3 = float4(d3 * up3 * UnprojectionMultiplier, 1);
     // convert the color from YUV to RGB
-    float y = colorTextureY[id.xy];
-    float2 uv = colorTextureUV[id.xy / 2] - 0.5;
-    float r = y + 1.370705 * (uv.y);
-    float g = y - 0.698001 * (uv.y) - (0.337633 * (uv.x));
-    float b = y + 1.732446 * (uv.x);
+    // TODO defer to fragment shader, just calculate texture uvs here as id.xy/width,height?
+    float y1 = colorTextureY[id.xy];
+    float2 uv1 = colorTextureUV[id.xy / 2] - 0.5;
+    float4 rgba1 = { y1 + 1.370705 * (uv1.y), y1 - 0.698001 * (uv1.y) - (0.337633 * (uv1.x)), y1 + 1.732446 * (uv1.x), 1 };
+    float y3 = colorTextureY[int2(id.x + 1, id.y + 1)];
+    float2 uv3 = colorTextureUV[int2((id.x + 1) / 2, (id.y + 1) / 2)] - 0.5;
+    float4 rgba3 = { y3 + 1.370705 * (uv3.y), y3 - 0.698001 * (uv3.y) - (0.337633 * (uv3.x)), y3 + 1.732446 * (uv3.x), 1 };
 
-    // TODO can't exclude any Vertices at this stage or else I muck up the indices
-    // but maybe I can make vertices invisible if out of range?
-    //float alpha = (d < MinDistance || d > MaxDistance) ? 0 : 1;
+    VertexData v1 = { p1, rgba1 };
+    VertexData v3 = { p3, rgba3 };
 
-    // place this vertex in the VertexBuffer
-    VertexData vertex = { p, float4(r, g, b, 1) };
-    vertices.Append(vertex);
-    //vertices[id.y * 320 + id.x] = vertex;
+    // TODO why can't I just check for == 0.0f...
+    if (d2 > 0.01f)
+    {
+        // we at least have the top-right triangle
+        float3 up2 = { id.x + 1 - PPX, PPY - id.y, 1 };
+        float4 p2 = float4(d2 * up2 * UnprojectionMultiplier, 1);
+        float y2 = colorTextureY[int2(id.x + 1, id.y)];
+        float2 uv2 = colorTextureUV[int2((id.x + 1) / 2, id.y / 2)] - 0.5;
+        float4 rgba2 = { y2 + 1.370705 * (uv2.y), y2 - 0.698001 * (uv2.y) - (0.337633 * (uv2.x)), y2 + 1.732446 * (uv2.x), 1 };
 
-    // TODO - try making a triangular mesh out of the vertices
-    // for every row/col except the last, put indices for two triangles
-    // into the Index Buffer below and to the right of the current vertex.
-    // TODO later: also check for depth difference between pixels and
-    // exclude triangles which exceed a threshold in depth difference
-    // But all vertex depths need to be calculated first? Can I chain the
-    // stages one after another? Well I could also just sample the depth texture
-    // 4 times even when I'm only processing top-left vertex
-    // FIXME try to get width and height from groups x threads or something?
-    // FIXME or else pass them to the shader in a buffer
-    // FIXME might be that 0, 0 is bottom-left, not top-left of depth (all? textures)
-    //if ((id.x < 319) && (id.y < 239))
-    //{
-        // add the top-left triangle if none of the depths are 0
-        //uint bottomleft = id.y * 320 + id.x;
-        //if (depthTexture[id.xy] > 0.1 && depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
-        //{
-            //indices.Append(uint3(bottomleft, bottomleft + 320, bottomleft + 1));           // bottom-left, top-left, bottom-right
-            //indices.IncrementCounter();
-            //indices.IncrementCounter();
-         //   indices.Append(bottomleft);
-         //   indices.Append(bottomleft + 1);
-         //   indices.Append(bottomleft + 320);
-        //}
+        VertexData v2 = { p2, rgba2 };
 
-        // add the lower-right triangle if none of the depths are 0
-        //if (depthTexture[uint2(id.x, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y + 1)] > 0.1 && depthTexture[uint2(id.x + 1, id.y)] > 0.1)
-        //{
-            //indices.Append(uint3(bottomleft + 320, bottomleft + 320 + 1, bottomleft + 1));          // top-left, top-right, bottom-right
-            //indices.IncrementCounter();
-            //indices.IncrementCounter();
-        //    indices.Append(bottomleft + 320);
-        //   indices.Append(bottomleft + 1);
-        //    indices.Append(bottomleft + 320 + 1);
-        //}
-    //}
+        // place the top-right triangle in the vertex buffer
+        TriangleData t = { v1, v2, v3 };
+        vertices.Append(t);
+    }
+
+    if (d4 > 0.01f)
+    {
+        // we at least have the bottom-left triangle
+        float3 up4 = { id.x - PPX, PPY - (id.y + 1), 1 };
+        float4 p4 = float4(d4 * up4 * UnprojectionMultiplier, 1);
+        float y4 = colorTextureY[int2(id.x, id.y + 1)];
+        float2 uv4 = colorTextureUV[int2(id.x / 2, (id.y + 1) / 2)] - 0.5;
+        float4 rgba4 = { y4 + 1.370705 * (uv4.y), y4 - 0.698001 * (uv4.y) - (0.337633 * (uv4.x)), y4 + 1.732446 * (uv4.x), 1 };
+
+        VertexData v4 = { p4, rgba4 };
+
+        // place the bottom-left triangle in the vertex buffer
+        TriangleData t = { v4, v1, v3 };
+        vertices.Append(t);
+    }
+}
+
+// some slight faffing because compute shader must append full triangle (3 verts) at a time
+// to render correctly, but this means the appendbuffer count is 3 times smaller than it 
+// needs to be, so we have to invoke another very short compute shader before the vertex shader
+#pragma kernel FixupIndirectArgs
+
+struct DrawCallArgsBuffer
+{
+    uint vertexCountPerInstance;
+    uint instanceCount;
+    uint startVertexLocation;
+    uint startInstanceLocation;
+};
+
+RWStructuredBuffer <DrawCallArgsBuffer> DrawCallArgs;
+
+[numthreads(1, 1, 1)]
+void FixupIndirectArgs(uint3 id : SV_DispatchThreadID)
+{
+    DrawCallArgs[0].vertexCountPerInstance *= 3;
 }

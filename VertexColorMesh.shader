@@ -39,7 +39,6 @@ Shader "Custom/VertexColorMesh"
             {
                 float4 position : SV_POSITION;
                 float4 color : COLOR;
-                float size : PSIZE;
             };
 
             float4x4 transform; //typically local to world matrix
@@ -55,8 +54,6 @@ Shader "Custom/VertexColorMesh"
                 vout.position = UnityObjectToClipPos(vout.position);
 
                 vout.color = vin.color;
-                //vout.size = 5.0f/length(ObjSpaceViewDir(vin.position)); // only supported in OpenGL, not directx?
-                vout.size = 5.0f; // leave distance scaling out of it for the moment
 
                 return vout;
             }
