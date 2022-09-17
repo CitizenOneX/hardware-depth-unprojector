@@ -23,6 +23,8 @@ CBUFFER_START(UnprojectionArgs)
     float PPY; //principal point y pixel coordinates (center of projection)
     float MinDistance; //in [0, 1], min valid distance divided by max distance, 0 accepts any
     float MaxDistance; //in [0, 1], max valid distance divided by max distance, 1 accepts any
+    uint WidthMinus1; // one less than the width of the depth texture (i.e. last addressable pixel)
+    uint HeightMinus1; // one less than the height of the depth texture (i.e. last addressable pixel)
 CBUFFER_END
 
 Texture2D<float> depthTexture; //normalised float in [0, 1] where 1 corresponds to max distance (2^16 * distance_unit e.g. 0.00025m = 16.384m)
@@ -44,8 +46,7 @@ AppendStructuredBuffer<TriangleData> vertices;
 void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
 {
     // do nothing for last row/last column
-    // TODO pass through the width/height in the constant buffer rather than hardcode here?
-    if (id.x==639 || id.y==479)
+    if (id.x == WidthMinus1 || id.y == HeightMinus1)
     {
         return;
     }
