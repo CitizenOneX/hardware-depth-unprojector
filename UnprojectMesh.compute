@@ -26,20 +26,16 @@ CBUFFER_START(UnprojectionArgs)
 CBUFFER_END
 
 Texture2D<float> depthTexture; //normalised float in [0, 1] where 1 corresponds to max distance (2^16 * distance_unit e.g. 0.00025m = 16.384m)
-Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
-Texture2D<float2> colorTextureUV; //UV plane of color corresponding to depth sample (width/2, height/2) floats
 
 struct VertexData
 {
     float4 position;
-    float4 color;
+    uint2 uv;  // actual pixel coords, not [0..1]
 };
 
 struct TriangleData
 {
-    VertexData v1;
-    VertexData v2;
-    VertexData v3;
+    VertexData vertices[3];
 };
 
 AppendStructuredBuffer<TriangleData> vertices;
@@ -78,17 +74,10 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
     // position
     float4 p1 = float4(d1 * up1 * UnprojectionMultiplier, 1);
     float4 p3 = float4(d3 * up3 * UnprojectionMultiplier, 1);
-    // convert the color from YUV to RGB
-    // TODO defer to fragment shader, just calculate texture uvs here as id.xy/width,height?
-    float y1 = colorTextureY[id.xy];
-    float2 uv1 = colorTextureUV[id.xy / 2] - 0.5;
-    float4 rgba1 = { y1 + 1.370705 * (uv1.y), y1 - 0.698001 * (uv1.y) - (0.337633 * (uv1.x)), y1 + 1.732446 * (uv1.x), 1 };
-    float y3 = colorTextureY[int2(id.x + 1, id.y + 1)];
-    float2 uv3 = colorTextureUV[int2((id.x + 1) / 2, (id.y + 1) / 2)] - 0.5;
-    float4 rgba3 = { y3 + 1.370705 * (uv3.y), y3 - 0.698001 * (uv3.y) - (0.337633 * (uv3.x)), y3 + 1.732446 * (uv3.x), 1 };
 
-    VertexData v1 = { p1, rgba1 };
-    VertexData v3 = { p3, rgba3 };
+    // defer YUV->RGB to fragment shader, just pass through texture uvs here as id.xy (not scaled to [0..1])
+    VertexData v1 = { p1, uint2(id.x, id.y) };
+    VertexData v3 = { p3, uint2(id.x + 1, id.y + 1) };
 
     // TODO why can't I just check for == 0.0f...
     if (d2 > 0.01f)
@@ -96,11 +85,8 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
         // we at least have the top-right triangle
         float3 up2 = { id.x + 1 - PPX, PPY - id.y, 1 };
         float4 p2 = float4(d2 * up2 * UnprojectionMultiplier, 1);
-        float y2 = colorTextureY[int2(id.x + 1, id.y)];
-        float2 uv2 = colorTextureUV[int2((id.x + 1) / 2, id.y / 2)] - 0.5;
-        float4 rgba2 = { y2 + 1.370705 * (uv2.y), y2 - 0.698001 * (uv2.y) - (0.337633 * (uv2.x)), y2 + 1.732446 * (uv2.x), 1 };
 
-        VertexData v2 = { p2, rgba2 };
+        VertexData v2 = { p2, uint2(id.x + 1, id.y) };
 
         // place the top-right triangle in the vertex buffer
         TriangleData t = { v1, v2, v3 };
@@ -112,11 +98,8 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
         // we at least have the bottom-left triangle
         float3 up4 = { id.x - PPX, PPY - (id.y + 1), 1 };
         float4 p4 = float4(d4 * up4 * UnprojectionMultiplier, 1);
-        float y4 = colorTextureY[int2(id.x, id.y + 1)];
-        float2 uv4 = colorTextureUV[int2(id.x / 2, (id.y + 1) / 2)] - 0.5;
-        float4 rgba4 = { y4 + 1.370705 * (uv4.y), y4 - 0.698001 * (uv4.y) - (0.337633 * (uv4.x)), y4 + 1.732446 * (uv4.x), 1 };
 
-        VertexData v4 = { p4, rgba4 };
+        VertexData v4 = { p4, uint2(id.x, id.y + 1) };
 
         // place the bottom-left triangle in the vertex buffer
         TriangleData t = { v4, v1, v3 };
@@ -137,7 +120,7 @@ struct DrawCallArgsBuffer
     uint startInstanceLocation;
 };
 
-RWStructuredBuffer <DrawCallArgsBuffer> DrawCallArgs;
+RWStructuredBuffer<DrawCallArgsBuffer> DrawCallArgs;
 
 [numthreads(1, 1, 1)]
 void FixupIndirectArgs(uint3 id : SV_DispatchThreadID)

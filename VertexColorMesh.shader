@@ -24,15 +24,16 @@ Shader "Custom/VertexColorMesh"
 
             #pragma vertex vert
             #pragma fragment frag
+
             // include debug symbols for RenderDoc
-            #pragma enable_d3d11_debug_symbols
+            //#pragma enable_d3d11_debug_symbols
 
             #include "UnityCG.cginc"
- 
+
             struct VertexData
             {
                 float4 position : POSITION;
-                float4 color : COLOR;
+                uint2 uv : TEXCOORD0; // actual pixel coords, not [0..1]
             };
 
             struct VertexOutput
@@ -44,16 +45,23 @@ Shader "Custom/VertexColorMesh"
             float4x4 transform; //typically local to world matrix
 
             StructuredBuffer<VertexData> vertices;
+            Texture2D<float> colorTextureY; //Y plane of color corresponding to depth sample
+            Texture2D<float2> colorTextureUV; //UV plane of color corresponding to depth sample (width/2, height/2) floats
 
             VertexOutput vert(uint vid : SV_VertexID)
             {
                 VertexData vin = vertices[vid];
                 VertexOutput vout;
 
-                vout.position =  mul(transform, vin.position);
-                vout.position = UnityObjectToClipPos(vout.position);
+                vout.position = UnityObjectToClipPos(mul(transform, vin.position));
 
-                vout.color = vin.color;
+                float y1 = colorTextureY[vin.uv];
+                float2 uv1 = colorTextureUV[vin.uv/2] - 0.5;
+                vout.color = float4( 
+                    y1 + 1.370705 * (uv1.y), 
+                    y1 - 0.698001 * (uv1.y) - (0.337633 * (uv1.x)), 
+                    y1 + 1.732446 * (uv1.x), 
+                    1);
 
                 return vout;
             }
