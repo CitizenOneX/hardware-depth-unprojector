@@ -17,6 +17,12 @@
 
 #include "UnityCG.cginc"
 
+// long stringy depthy triangles are probably connecting a hand in front to a face behind or something, so don't draw them
+#define MAX_TRIANGLE_DEPTH 0.0006f
+
+ // any depth points smaller than the ZERO_CUTOFF and all the zero depth points are drawn
+#define ZERO_CUTOFF 0.0079f
+
 CBUFFER_START(UnprojectionArgs)
     float3 UnprojectionMultiplier; //max distance * [1/fx, 1/fy, 1]
     float PPX; //principal point x pixel coordinates (center of projection)
@@ -58,12 +64,13 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
     float d4 = depthTexture[int2(id.x, id.y+1)];
 
     // scale depth and add offset from camera
-    (d1 > 0.01f) ? d1 = d1 / 64.0f + (512.0f / 65536.0f) : 0.0f;
-    (d2 > 0.01f) ? d2 = d2 / 64.0f + (512.0f / 65536.0f) : 0.0f;
-    (d3 > 0.01f) ? d3 = d3 / 64.0f + (512.0f / 65536.0f) : 0.0f;
-    (d4 > 0.01f) ? d4 = d4 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d1 > ZERO_CUTOFF) ? d1 = d1 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d2 > ZERO_CUTOFF) ? d2 = d2 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d3 > ZERO_CUTOFF) ? d3 = d3 / 64.0f + (512.0f / 65536.0f) : 0.0f;
+    (d4 > ZERO_CUTOFF) ? d4 = d4 / 64.0f + (512.0f / 65536.0f) : 0.0f;
 
-    if (d1 < 0.01f || d3 < 0.01f)
+    // if diagonal vertices are effectively zero, or if they're far apart in depth
+    if (d1 < ZERO_CUTOFF || d3 < ZERO_CUTOFF || abs(d1 - d3) > MAX_TRIANGLE_DEPTH)
     {
         // neither triangle should be drawn
         return;
@@ -80,8 +87,8 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
     VertexData v1 = { p1, uint2(id.x, id.y) };
     VertexData v3 = { p3, uint2(id.x + 1, id.y + 1) };
 
-    // TODO why can't I just check for == 0.0f...
-    if (d2 > 0.01f)
+    // if top-right vertex is a proper depth and if it's close enough in depth from the other two
+    if (d2 > ZERO_CUTOFF && abs(d2 - d1) < MAX_TRIANGLE_DEPTH && abs(d2 - d3) < MAX_TRIANGLE_DEPTH)
     {
         // we at least have the top-right triangle
         float3 up2 = { id.x + 1 - PPX, PPY - id.y, 1 };
@@ -94,7 +101,8 @@ void UnprojectMeshKernel (uint3 id : SV_DispatchThreadID)
         vertices.Append(t);
     }
 
-    if (d4 > 0.01f)
+    // if bottom-left vertex is a proper depth and if it's close enough in depth from the other two
+    if (d4 > ZERO_CUTOFF && abs(d4 - d1) < MAX_TRIANGLE_DEPTH && abs(d4 - d3) < MAX_TRIANGLE_DEPTH)
     {
         // we at least have the bottom-left triangle
         float3 up4 = { id.x - PPX, PPY - (id.y + 1), 1 };
